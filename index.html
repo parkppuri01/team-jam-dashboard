@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Team jAm 차트</title>
+<style>
+  :root{
+    --bg:#111211; --card:#1a1b1a; --line:#2a2c2a; --ink:#e8e8e6;
+    --dim:#8b8d8a; --amber:#F5A623; --up:#6fbf7e; --down:#d1736b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo",sans-serif;
+    padding:28px 16px 60px}
+  .wrap{max-width:860px;margin:0 auto}
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font-size:19px;font-weight:600;margin:0;letter-spacing:-.01em}
+  .sub{color:var(--dim);font-size:13px}
+  button{background:var(--card);color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;font-family:inherit}
+  button:hover{border-color:var(--amber)}
+  .app{margin-top:26px;border:1px solid var(--line);border-radius:12px;background:var(--card);overflow:hidden}
+  .app h2{margin:0;padding:14px 16px;font-size:15px;font-weight:600;border-bottom:1px solid var(--line);
+    display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .tag{font-size:11px;color:var(--dim);font-weight:400;border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:11px 16px;text-align:left;border-bottom:1px solid var(--line);font-size:14px}
+  th{color:var(--dim);font-weight:500;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  td.rank{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+  td.rank small{font-size:11px;color:var(--dim);font-weight:400;margin-left:3px}
+  .in{color:var(--amber)}
+  .out{color:var(--dim);font-weight:400;font-size:14px}
+  .near{color:var(--dim);font-size:12px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  footer{margin-top:28px;color:var(--dim);font-size:12px;line-height:1.7}
+  .err{color:var(--down)}
+  @media(max-width:620px){
+    .near,th.near-h{display:none}
+    body{padding:20px 12px 40px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Team jAm 차트</h1>
+    <span class="sub" id="stamp">불러오는 중…</span>
+    <button id="reload" style="margin-left:auto">새로고침</button>
+  </header>
+  <div class="sub">App Store 공개 차트 피드에서 바로 읽습니다. 하루 한 번쯤 갱신됩니다.</div>
+  <div id="apps"></div>
+  <footer>
+    순위가 <b>—</b> 면 그 차트(100위권) 안에 없다는 뜻입니다. 판매가 없다는 뜻이 아닙니다.<br>
+    출처 = Apple RSS 차트 피드 · 실시간이 아니라 하루 단위로 갱신됩니다.<br>
+    <b>전체</b> 칸은 옛 iPhone 피드 기준이라 App Store 앱에서 보이는 전체 순위와 다를 수 있습니다.
+    카테고리 칸(사진 및 비디오 · 유틸리티)이 실제로 겨루는 자리입니다.
+  </footer>
+</div>
+<script>
+const COUNTRIES = [
+  {cc:'kr', name:'한국'}, {cc:'us', name:'미국'}, {cc:'jp', name:'일본'},
+  {cc:'tw', name:'대만'}, {cc:'hk', name:'홍콩'}, {cc:'gb', name:'영국'},
+];
+
+// 앱마다 볼 차트 두 개 — 카테고리(주된 자리)와 전체.
+// feed: 애플 RSS 이름 / genre: 없으면 전체 차트
+const APPS = [
+  {
+    id:'6794272967', name:'ZRcamera', tags:['iPhone', '유료', '사진 및 비디오'],
+    charts:[
+      {label:'사진 및 비디오', feed:'toppaidapplications', genre:'6008'},
+      {label:'전체 유료',     feed:'toppaidapplications'},
+    ],
+  },
+  {
+    id:'6801170433', name:'HotSauce', tags:['Mac', '무료', '유틸리티'],
+    charts:[
+      {label:'유틸리티',  feed:'topfreemacapps', genre:'6002'},
+      {label:'전체 무료', feed:'topfreemacapps'},
+    ],
+  },
+];
+
+const url = (cc, ch) =>
+  `https://itunes.apple.com/${cc}/rss/${ch.feed}/limit=200${ch.genre ? '/genre='+ch.genre : ''}/json`;
+
+async function lookup(cc, ch, appId){
+  const res = await fetch(url(cc, ch));
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const feed = (await res.json()).feed;
+  let entries = feed.entry || [];
+  if(!Array.isArray(entries)) entries = [entries];
+  const ids = entries.map(e => e.id.attributes['im:id']);
+  const i = ids.indexOf(appId);
+  return {
+    rank: i < 0 ? null : i + 1,
+    total: ids.length,
+    near: i < 0 ? '' : entries.slice(Math.max(0,i-1), i+2)
+      .map((e,k) => (ids[Math.max(0,i-1)+k] === appId ? '▸ ' : '') + e['im:name'].label).join('  ·  '),
+  };
+}
+
+function row(name, cells){
+  const td = cells.map(c => {
+    if(c.error) return `<td class="rank err">오류</td>`;
+    if(c.rank === null) return `<td class="rank out">—</td>`;
+    return `<td class="rank in">${c.rank}<small>/${c.total}</small></td>`;
+  }).join('');
+  const near = cells.find(c => c.near)?.near || '';
+  return `<tr><td>${name}</td>${td}<td class="near">${near}</td></tr>`;
+}
+
+async function render(){
+  const box = document.getElementById('apps');
+  box.innerHTML = '';
+  for(const app of APPS){
+    const el = document.createElement('div');
+    el.className = 'app';
+    el.innerHTML = `<h2>${app.name}${app.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</h2>
+      <table><thead><tr><th>나라</th>
+      ${app.charts.map(c=>`<th>${c.label}</th>`).join('')}
+      <th class="near-h">앞 · 나 · 뒤</th></tr></thead>
+      <tbody><tr><td colspan="${app.charts.length+2}" class="sub">불러오는 중…</td></tr></tbody></table>`;
+    box.appendChild(el);
+
+    const rows = await Promise.all(COUNTRIES.map(async ct => {
+      const cells = await Promise.all(app.charts.map(async ch => {
+        try { return await lookup(ct.cc, ch, app.id); }
+        catch(e){ return {error:true}; }
+      }));
+      return row(ct.name, cells);
+    }));
+    el.querySelector('tbody').innerHTML = rows.join('');
+  }
+  document.getElementById('stamp').textContent =
+    new Date().toLocaleString('ko-KR', {dateStyle:'medium', timeStyle:'short'}) + ' 기준';
+}
+
+document.getElementById('reload').addEventListener('click', render);
+render();
+</script>
+</body>
+</html>
